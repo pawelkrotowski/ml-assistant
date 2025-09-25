@@ -3,6 +3,8 @@ from fastapi import FastAPI, UploadFile, HTTPException, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+from sqlalchemy import select, func
+
 
 from .db import SessionLocal, init_db, Document, Chunk
 from .chunking import chunk_any
@@ -116,6 +118,6 @@ async def chat(payload: ChatIn):
 @app.get("/stats")
 def stats():
     with SessionLocal() as s:
-        docs = s.execute("SELECT COUNT(*) FROM documents").scalar()
-        chks = s.execute("SELECT COUNT(*) FROM chunks").scalar()
-    return {"documents": int(docs or 0), "chunks": int(chks or 0)}
+        docs = s.execute(select(func.count()).select_from(Document)).scalar_one()
+        chks = s.execute(select(func.count()).select_from(Chunk)).scalar_one()
+    return {"documents": docs, "chunks": chks}
