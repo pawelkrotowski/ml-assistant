@@ -2,16 +2,18 @@
 # ------------------------------------------------------------
 # RAG utilities:
 #  - build_prompt(user, contexts, language="pl", citations=False) -> messages
-#  - call_llm(messages, temperature=0.2, max_tokens=800) -> str
+#  - call_llm(messages, temperature=0.2, max_tokens=800, model=None, num_ctx=None, extra_options=None) -> str
 # Providers:
 #  - Ollama (default) with streaming + retry
 #  - Azure OpenAI (Chat Completions)
 # ENV:
 #  LLM_PROVIDER=ollama|azure
 #  OLLAMA_BASE_URL=http://ollama:11434
-#  OLLAMA_MODEL=phi3:mini          # np. phi3:mini, qwen2.5:3b-instruct, llama3.1:8b
+#  OLLAMA_MODEL=qwen2.5:7b-instruct      # np. qwen2.5:7b-instruct, qwen2.5:14b-instruct, llama3.1:8b
 #  OLLAMA_NUM_PREDICT=256
-#  LLM_TIMEOUT=300                 # sekundy
+#  OLLAMA_NUM_CTX=8192
+#  OLLAMA_OPTIONS_JSON={}                # np. {"mirostat":1,"mirostat_tau":5}
+#  LLM_TIMEOUT=300                       # sekundy
 #  AZURE_OPENAI_ENDPOINT=...
 #  AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
 #  AZURE_OPENAI_API_KEY=...
@@ -24,10 +26,10 @@ from __future__ import annotations
 import os
 import json
 import asyncio
-import httpx
-from typing import List, Dict, Sequence
+from typing import List, Dict, Sequence, Optional, Any
 
 import httpx
+
 FALLBACK_EMPTY = "Nie mam wystarczających informacji w dostarczonym kontekście."
 
 # --- Konfiguracja z ENV ---
@@ -35,8 +37,13 @@ LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "ollama").strip().lower()
 
 # Ollama
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "phi3:mini")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b-instruct")
 OLLAMA_NUM_PREDICT = int(os.environ.get("OLLAMA_NUM_PREDICT", "256"))
+OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "8192"))
+try:
+    OLLAMA_OPTIONS_JSON = json.loads(os.environ.get("OLLAMA_OPTIONS_JSON", "{}") or "{}")
+except json.JSONDecodeError:
+    OLLAMA_OPTIONS_JSON = {}
 
 # Azure OpenAI
 AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
@@ -90,46 +97,78 @@ def build_prompt(
     ]
 
 
-# --- Wywołania LLM ---
-async def _ollama_chat_stream(messages, temperature: float, num_predict: int) -> str:
+# --- OLLAMA ---
+async def _ollama_chat_stream(
+    messages: List[Dict[str, str]],
+    *,
+    model: str,
+    temperature: float,
+    num_predict: int,
+    num_ctx: int,
+    extra_options: Optional[Dict[str, Any]] = None,
+) -> str:
+    options: Dict[str, Any] = {
+        "temperature": temperature,
+        "num_predict": num_predict,
+        "num_ctx": num_ctx,
+    }
+    if OLLAMA_OPTIONS_JSON:
+        options.update(OLLAMA_OPTIONS_JSON)
+    if extra_options:
+        options.update(extra_options)
+
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": model,
         "messages": messages,
         "stream": True,
-        "options": {"temperature": temperature, "num_predict": num_predict},
+        "options": options,
     }
     timeout = httpx.Timeout(connect=10.0, read=LLM_TIMEOUT, write=60.0, pool=None)
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream("POST", f"{OLLAMA_BASE_URL}/api/chat", json=payload) as r:
             r.raise_for_status()
-            buf = []
+            buf: List[str] = []
             async for line in r.aiter_lines():
-                if not line.strip():
+                if not line:
                     continue
-                # Ollama streamuje czysty JSON w KAŻDEJ linii
+                # Ollama streamuje czysty JSON per linia; czasem prefiks "data:"
+                raw = line[5:].strip() if line.startswith("data:") else line
                 try:
-                    chunk = json.loads(line)
+                    chunk = json.loads(raw)
                 except Exception:
-                    # czasem pojawia się "data: {json}" – obsłużmy oba warianty
-                    if line.startswith("data:"):
-                        try:
-                            chunk = json.loads(line[5:].strip())
-                        except Exception:
-                            continue
-                    else:
-                        continue
+                    continue
                 msg = chunk.get("message")
                 if isinstance(msg, dict) and "content" in msg:
                     buf.append(msg["content"])
-                elif "response" in chunk:  # niektóre warianty API
+                elif "response" in chunk:  # alternatywny format
                     buf.append(chunk["response"])
             return "".join(buf).strip()
-async def _ollama_chat_nostream(messages, temperature: float, num_predict: int) -> str:
+
+
+async def _ollama_chat_nostream(
+    messages: List[Dict[str, str]],
+    *,
+    model: str,
+    temperature: float,
+    num_predict: int,
+    num_ctx: int,
+    extra_options: Optional[Dict[str, Any]] = None,
+) -> str:
+    options: Dict[str, Any] = {
+        "temperature": temperature,
+        "num_predict": num_predict,
+        "num_ctx": num_ctx,
+    }
+    if OLLAMA_OPTIONS_JSON:
+        options.update(OLLAMA_OPTIONS_JSON)
+    if extra_options:
+        options.update(extra_options)
+
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": model,
         "messages": messages,
         "stream": False,
-        "options": {"temperature": temperature, "num_predict": num_predict},
+        "options": options,
     }
     timeout = httpx.Timeout(connect=10.0, read=LLM_TIMEOUT, write=60.0, pool=None)
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -143,6 +182,8 @@ async def _ollama_chat_nostream(messages, temperature: float, num_predict: int) 
                 return (data["choices"][0]["message"]["content"] or "").strip()
         return ""
 
+
+# --- AZURE OPENAI ---
 async def _azure_chat(messages: List[Dict[str, str]], temperature: float, max_tokens: int) -> str:
     if not (AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT and AZURE_OPENAI_API_KEY):
         raise RuntimeError("Azure OpenAI not configured (endpoint/deployment/api key).")
@@ -162,21 +203,54 @@ async def _azure_chat(messages: List[Dict[str, str]], temperature: float, max_to
         return data["choices"][0]["message"]["content"].strip()
 
 
-async def call_llm(messages, temperature: float = 0.2, max_tokens: int = 800) -> str:
+# --- PUBLIC API ---
+async def call_llm(
+    messages: List[Dict[str, str]],
+    *,
+    temperature: float = 0.2,
+    max_tokens: int = 800,
+    model: Optional[str] = None,           # <— per-request override
+    num_ctx: Optional[int] = None,         # <— per-request override
+    extra_options: Optional[Dict[str, Any]] = None,  # dodatkowe opcje do Ollamy
+) -> str:
+    """
+    Wywołuje LLM zgodnie z LLM_PROVIDER.
+    - Dla Ollamy: używa modelu z parametru, ENV OLLAMA_MODEL lub domyślnie qwen2.5:7b-instruct.
+    - Dla Azure: używa ustawionego deploymentu.
+    """
     if LLM_PROVIDER == "ollama":
+        mdl = (model or OLLAMA_MODEL).strip()
+        ctx = int(num_ctx or OLLAMA_NUM_CTX)
+        # 1) streaming z retry
         try:
-            out = await _ollama_chat_stream(messages, temperature, OLLAMA_NUM_PREDICT)
+            out = await _ollama_chat_stream(
+                messages,
+                model=mdl,
+                temperature=temperature,
+                num_predict=OLLAMA_NUM_PREDICT,
+                num_ctx=ctx,
+                extra_options=extra_options,
+            )
             if out:
                 return out
         except (httpx.TimeoutException, httpx.ReadError):
             await asyncio.sleep(0.5)  # drobny retry delay
-        # Fallback bez streamu
+        # 2) fallback bez streamu
         try:
-            out2 = await _ollama_chat_nostream(messages, temperature, OLLAMA_NUM_PREDICT)
+            out2 = await _ollama_chat_nostream(
+                messages,
+                model=mdl,
+                temperature=temperature,
+                num_predict=OLLAMA_NUM_PREDICT,
+                num_ctx=ctx,
+                extra_options=extra_options,
+            )
             return out2 or FALLBACK_EMPTY
         except Exception:
             return FALLBACK_EMPTY
+
     elif LLM_PROVIDER == "azure":
         return await _azure_chat(messages, temperature, max_tokens)
+
     else:
         raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER!r}")

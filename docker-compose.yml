@@ -18,19 +18,37 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ml_ollama
+    command: [ "serve" ]
+    # ports: ["11434:11434"]   # mapuj tylko jeśli chcesz używać z hosta
+    gpus: all
     volumes:
       - ollama:/root/.ollama
-    gpus: all
-    healthcheck:
-      test: ["CMD", "ollama", "ps"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 20s
     environment:
       NVIDIA_VISIBLE_DEVICES: "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
       OLLAMA_KEEP_ALIVE: "4h"
+    healthcheck:
+      test: [ "CMD", "/bin/ollama", "ps" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+
+    # Jednorazowy init do pobrania modelu do współdzielonego wolumenu
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"   # <— wskaż serwis ollama
+    entrypoint: [ "/bin/ollama" ]
+    command: [ "pull", "${OLLAMA_MODEL:-qwen2.5:7b-instruct}" ]
+    volumes:
+      - ollama:/root/.ollama
+    restart: "no"
 
   api:
     image: python:3.11-slim
@@ -38,15 +56,22 @@ services:
     working_dir: /app
     env_file: .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/ml_assistant}
-      PYTHONUNBUFFERED: "1"
-      LLM_PROVIDER: ollama
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
-      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-256}
-      LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
-      OLLAMA_KEEP_ALIVE: "4h"
-      RAG_CITATIONS: 0
+      - DATABASE_URL=${DATABASE_URL}
+      - RAG_CITATIONS=${RAG_CITATIONS}
+      - MAX_CONTEXT_CHARS=${MAX_CONTEXT_CHARS}
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - LLM_TIMEOUT=${LLM_TIMEOUT}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - OLLAMA_NUM_PREDICT=${OLLAMA_NUM_PREDICT}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX}
+      - OLLAMA_OPTIONS_JSON=${OLLAMA_OPTIONS_JSON}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT}
+      - EMBED_PROVIDER=${EMBED_PROVIDER}
+      - AZURE_EMBED_DEPLOYMENT=${AZURE_EMBED_DEPLOYMENT}
     volumes:
       - ./:/app
       - pip-cache:/root/.cache/pip
