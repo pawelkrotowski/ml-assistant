@@ -1,301 +1,388 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>prodtramtsty — RAG UI (with Code Snippets)</title>
-
-<!-- Styles -->
-<style>
-  :root{
-    --bg:#0f172a; --panel:#0b1220; --card:#111827; --border:#1f2937;
-    --text:#e5e7eb; --muted:#94a3b8; --accent:#22c55e; --danger:#ef4444; --warn:#f59e0b;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,"Noto Sans",sans-serif}
-  header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}
-  header h1{margin:0;font-size:16px}
-  .muted{color:var(--muted)}
-  input,button,textarea{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;outline:none}
-  button{cursor:pointer}.primary{background:var(--accent);border-color:var(--accent);color:#052e16}.danger{background:var(--danger);border-color:var(--danger);color:#fff}
-  .ghost{background:transparent}
-  .container{display:grid;grid-template-columns:320px 1fr;gap:14px;padding:14px}
-  @media (max-width: 980px){.container{grid-template-columns:1fr}}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
-  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .col{display:flex;flex-direction:column;gap:8px}
-  .chip{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--muted)}
-  .progress{height:8px;background:var(--panel);border:1px solid var(--border);border-radius:999px;overflow:hidden}
-  .bar{height:100%;width:0;background:var(--accent);transition:width .1s}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top}
-  th{text-align:left;color:#93c5fd}
-  #chat{height:360px;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px}
-  .msg{margin-bottom:10px}
-  .role{font-weight:600;margin-right:6px}
-  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #64748b;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-3px}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  pre{margin:8px 0;padding:10px;border-radius:8px;overflow:auto;background:#0a0f1a;border:1px solid #1e293b}
-  code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12.5px}
-</style>
-
-<!-- highlight.js (code highlighting) -->
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>prodtramtsty — RAG Chat</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#0b1220; --card:#111827; --border:#1f2937;
+    --text:#e5e7eb; --muted:#94a3b8; --accent:#22c55e; --danger:#ef4444; --chip:#0b1327;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Ubuntu,Arial}
+  header{position:sticky;top:0;z-index:10;display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(15,23,42,.85);backdrop-filter:saturate(180%) blur(8px)}
+  header h1{margin:0;font-size:14px;opacity:.9}
+  .muted{color:var(--muted)}
+  input,button,textarea,select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:14px;outline:none}
+  input::file-selector-button{border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:8px;padding:6px 10px;margin-right:8px}
+  button{cursor:pointer}
+  .primary{background:var(--accent);border-color:var(--accent);color:#052e16}
+  .danger{background:var(--danger);border-color:var(--danger);color:#fff}
+  .ghost{background:transparent}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid var(--border);background:var(--chip);color:var(--muted);font-size:12px}
+  .layout{display:flex;height:calc(100% - 58px)}
+  .sidebar{width:320px;min-width:280px;max-width:420px;border-right:1px solid var(--border);padding:14px;display:flex;flex-direction:column;gap:14px}
+  .content{flex:1;display:flex;flex-direction:column}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .col{display:flex;flex-direction:column;gap:8px}
+  .progress{height:8px;background:var(--panel);border:1px solid var(--border);border-radius:999px;overflow:hidden}
+  .bar{height:100%;width:0;background:var(--accent);transition:width .1s}
+  .docs{min-height:120px;max-height:220px;overflow:auto}
+  .docs table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .docs th,.docs td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top;text-align:left}
+  .chat-wrap{flex:1;overflow:auto;padding:18px}
+  .chat{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  .bubble{display:flex;gap:12px}
+  .avatar{flex:0 0 28px;height:28px;border-radius:50%;background:#0a0f1a;border:1px solid #1e293b;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9ca3af}
+  .msg{flex:1;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;line-height:1.55;word-wrap:break-word;white-space:pre-wrap}
+  .msg p{margin:.5em 0}
+  .msg pre{margin:10px 0;padding:10px;border-radius:10px;overflow:auto;background:#0a0f1a;border:1px solid #1e293b}
+  .composer{position:sticky;bottom:0;padding:12px;display:flex;justify-content:center;background:linear-gradient(180deg,transparent,rgba(15,23,42,.75))}
+  .composer-inner{width:100%;max-width:920px;display:flex;flex-direction:column;gap:8px}
+  .compose-row{display:flex;gap:8px;align-items:flex-end}
+  .compose-input{flex:1;display:flex;gap:8px}
+  .compose-input textarea{flex:1;min-height:48px;max-height:180px;resize:vertical;padding:12px 14px}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #64748b;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-3px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .dropzone{border:1px dashed #374151;border-radius:12px;padding:10px;text-align:center;color:var(--muted)}
+  @media (max-width: 1024px){.sidebar{display:none}}
+</style>
 </head>
 <body>
 
 <header>
-  <h1>prodtramtsty — RAG UI</h1>
-  <span class="muted">API:</span>
-  <input id="apiBase" value="http://localhost:8000" style="min-width:260px">
+  <h1>prodtramtsty — RAG Chat</h1>
+  <span class="muted">API</span>
+  <input id="apiBase" value="http://localhost:8000" style="min-width:260px"/>
   <button class="ghost" onclick="saveApiBase()">Save</button>
-  <span id="apiStatus">⏳</span>
+  <span id="apiStatus" class="chip">⏳</span>
   <div style="margin-left:auto"></div>
   <button class="ghost" onclick="refreshAll()">Refresh</button>
 </header>
 
-<div class="container">
-  <section class="card">
-    <h2 style="margin:0 0 8px 0;font-size:14px;opacity:.9">Upload document</h2>
-    <div class="col">
-      <input type="file" id="fileInput" />
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <strong>Upload</strong>
+        <button class="ghost" onclick="document.getElementById('fileInput').click()">Choose</button>
+      </div>
+      <input type="file" id="fileInput" style="width:100%"/>
+      <div class="dropzone" id="dropzone">Drag & drop files here</div>
       <div class="progress"><div id="upBar" class="bar"></div></div>
       <div class="row">
         <button class="primary" onclick="upload()">Upload</button>
         <span id="uploadMsg" class="muted"></span>
       </div>
-    </div>
+    </section>
 
-    <hr style="border-color:#1f2937;margin:14px 0">
-
-    <h2 style="margin:0 0 8px 0;font-size:14px;opacity:.9">Stats</h2>
-    <div class="row">
-      <div class="chip">docs: <span id="statDocs">—</span></div>
-      <div class="chip">chunks: <span id="statChunks">—</span></div>
-      <button class="ghost" onclick="loadStats()">↻</button>
-    </div>
-
-    <hr style="border-color:#1f2937;margin:14px 0">
-
-    <h2 style="margin:0 0 8px 0;font-size:14px;opacity:.9">Documents</h2>
-    <div class="row">
-      <button class="danger" onclick="deleteAll()">Delete ALL</button>
-      <span class="muted">Careful: removes all chunks.</span>
-    </div>
-    <div id="docsWrap" style="margin-top:10px;max-height:280px;overflow:auto">
-      <table id="docsTbl">
-        <thead><tr><th>Source</th><th>Chunks</th><th>ID</th><th>Actions</th></tr></thead>
-        <tbody id="docsTbody"><tr><td colspan="4" class="muted">No data.</td></tr></tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2 style="margin:0 0 8px 0;font-size:14px;opacity:.9">Chat</h2>
-    <div class="col">
-      <div class="row">
-        <input id="chatLang" value="pl" style="width:80px" title="Language (e.g., en, pl)" />
-        <input id="chatK" value="4" style="width:80px" title="Top-k" />
-        <button class="ghost" onclick="clearChat()">Clear</button>
+    <section class="card">
+      <strong>Settings</strong>
+      <div class="col" style="margin-top:6px">
+        <label class="row">
+          <span class="chip">k</span>
+          <input id="chatK" type="number" value="6" style="width:90px" title="Top-k"/>
+          <span class="muted">contexts per query</span>
+        </label>
+        <label class="row">
+          <span class="chip">Lang</span>
+          <input id="chatLang" value="pl" style="width:120px" title="Language"/>
+        </label>
+        <label class="row">
+          <span class="chip">Model</span>
+          <input id="chatModel" placeholder="e.g. qwen2.5:7b-instruct" style="width:220px" title="Override model (optional)"/>
+        </label>
+        <label class="row">
+          <input type="checkbox" id="streamToggle" checked />
+          <span class="muted">Live typing</span>
+        </label>
       </div>
-      <div id="chat"></div>
-      <div class="row" style="margin-top:8px">
-        <textarea id="chatMsg" rows="2" style="flex:1" placeholder="Ask about your documents…"></textarea>
-        <button class="primary" id="sendBtn" onclick="sendChat()">Send</button>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <strong>Stats & Docs</strong>
+        <button class="ghost" onclick="loadStats();loadDocs()">↻</button>
+      </div>
+      <div class="row" style="margin:8px 0">
+        <span class="chip">docs: <b id="statDocs">—</b></span>
+        <span class="chip">chunks: <b id="statChunks">—</b></span>
+      </div>
+      <div class="docs">
+        <table>
+          <thead><tr><th>Source</th><th>Chunks</th><th>ID</th><th></th></tr></thead>
+          <tbody id="docsTbody"><tr><td class="muted" colspan="4">No data.</td></tr></tbody>
+        </table>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="danger" onclick="deleteAll()">Delete ALL</button>
+        <span class="muted">Removes all chunks</span>
+      </div>
+    </section>
+  </aside>
+
+  <!-- CHAT -->
+  <main class="content">
+    <div id="chatScroll" class="chat-wrap">
+      <div id="chat" class="chat"></div>
+    </div>
+
+    <!-- COMPOSER -->
+    <div class="composer">
+      <div class="composer-inner">
+        <div class="compose-row">
+          <div class="compose-input" style="flex:1">
+            <textarea id="chatMsg" rows="1" placeholder="Ask about your documents… (Shift+Enter = newline)"></textarea>
+          </div>
+          <div class="row">
+            <button class="primary" id="sendBtn" onclick="sendChat()">Send</button>
+          </div>
+        </div>
+        <div class="row" style="justify-content:space-between">
+          <small class="muted">Tip: drop files anywhere to ingest.</small>
+          <small class="muted">Enter to send • Shift+Enter for newline</small>
+        </div>
       </div>
     </div>
-  </section>
+  </main>
 </div>
 
 <script>
+/* ---------- helpers ---------- */
 const qs = s => document.querySelector(s);
+const chatBox = qs('#chat');
+const chatScroll = qs('#chatScroll');
+const chatMsg = qs('#chatMsg');
+const chatK = qs('#chatK');
+const chatLang = qs('#chatLang');
+const chatModel = qs('#chatModel');
+const streamToggle = qs('#streamToggle');
+const sendBtn = qs('#sendBtn');
 const apiBaseEl = qs('#apiBase');
 const apiStatus = qs('#apiStatus');
 const upBar = qs('#upBar');
 const uploadMsg = qs('#uploadMsg');
+const docsTbody = qs('#docsTbody');
 const statDocs = qs('#statDocs');
 const statChunks = qs('#statChunks');
-const docsTbody = qs('#docsTbody');
-const chatBox = qs('#chat');
-const chatMsg = qs('#chatMsg');
-const chatK = qs('#chatK');
-const chatLang = qs('#chatLang');
-const sendBtn = qs('#sendBtn');
+const dropzone = qs('#dropzone');
 
 function getBase(){ return localStorage.getItem('apiBase') || apiBaseEl.value.trim(); }
 function saveApiBase(){ localStorage.setItem('apiBase', apiBaseEl.value.trim()); pingApi(); }
+
 async function pingApi(){
   apiStatus.textContent = '⏳';
-  try{
-    const r = await fetch(getBase() + '/health');
-    apiStatus.textContent = r.ok ? '🟢' : '🔴';
-  }catch{ apiStatus.textContent = '🔴'; }
-}
-function refreshAll(){ pingApi(); loadStats(); loadDocs(); }
-
-function escapeHtml(s){
-  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  try{ const r = await fetch(getBase() + '/health'); apiStatus.textContent = r.ok ? '🟢' : '🔴'; }
+  catch{ apiStatus.textContent = '🔴'; }
 }
 
-/** Convert markdown-style code fences to highlighted <pre><code> blocks. */
-function renderWithCodeFences(text){
-  const fenceRe = /```(\w+)?\n([\s\S]*?)```/g;
-  let out = '';
-  let last = 0;
-  let m;
+function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
 
-  while ((m = fenceRe.exec(text)) !== null) {
-    const before = text.slice(last, m.index);
-    if (before) out += '<p>' + escapeHtml(before).replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>') + '</p>';
-
-    const lang = (m[1] || '').toLowerCase();
-    const code = m[2];
-    const cls = lang ? ` class="language-${escapeHtml(lang)}"` : '';
-    out += `<pre><code${cls}>${escapeHtml(code)}</code></pre>`;
-    last = m.index + m[0].length;
+function renderMarkdownLite(text){
+  const fence=/```(\w+)?\n([\s\S]*?)```/g; let out='', last=0, m;
+  while((m=fence.exec(text))){ const before=text.slice(last,m.index);
+    if(before) out += '<p>'+esc(before).replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>')+'</p>';
+    const lang=(m[1]||'').toLowerCase(); const code=m[2];
+    const cls=lang?` class="language-${esc(lang)}"`:'';
+    out += `<pre><code${cls}>${esc(code)}</code></pre>`; last=m.index+m[0].length;
   }
-  const tail = text.slice(last);
-  if (tail.trim()) {
-    out += '<p>' + escapeHtml(tail).replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>') + '</p>';
+  const tail=text.slice(last); if(tail.trim()) out += '<p>'+esc(tail).replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>')+'</p>';
+  return out || esc(text);
+}
+
+function addBubble(role, htmlContent){
+  const wrap = document.createElement('div'); wrap.className='bubble';
+  const avatar = document.createElement('div'); avatar.className='avatar'; avatar.textContent = role==='You'?'Y':'AI';
+  const msg = document.createElement('div'); msg.className='msg'; msg.innerHTML = htmlContent;
+  wrap.appendChild(avatar); wrap.appendChild(msg);
+  chatBox.appendChild(wrap);
+  chatScroll.scrollTop = chatScroll.scrollHeight;
+  msg.querySelectorAll('pre code').forEach(el=>{ try{ hljs.highlightElement(el); }catch{} });
+  return msg; // zwracamy .msg (dziecko bąbelka)
+}
+
+function addThinking(){
+  return addBubble('AI', '<span class="spinner"></span> Thinking…');
+}
+
+/* ---------- robust parsing ---------- */
+function tryParseJsonLoose(text) {
+  // 1) czysty JSON
+  try { return JSON.parse(text); } catch {}
+  // 2) NDJSON — ostatnia niepusta linia
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try { return JSON.parse(lines[i]); } catch {}
   }
-  return out || escapeHtml(text);
+  // 3) heurystyka: ostatni blok {...}
+  const start = text.lastIndexOf('{');
+  const end   = text.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(text.slice(start, end + 1)); } catch {}
+  }
+  return { raw: text };
 }
 
-/** Append a chat message (role = 'You' | 'Bot'); content can include code fences. */
-function addMsg(role, rawText){
-  const div = document.createElement('div');
-  div.className = 'msg';
-  const html = renderWithCodeFences(rawText);
-  div.innerHTML = `<span class="role">${escapeHtml(role)}:</span> <span>${html}</span>`;
-  chatBox.appendChild(div);
-  // Highlight code blocks
-  div.querySelectorAll('pre code').forEach(el => { try { hljs.highlightElement(el); } catch(_){} });
-  chatBox.scrollTop = chatBox.scrollHeight;
+async function fetchJSON(url, opts){
+  const r = await fetch(url, opts);
+  const text = await r.text();              // JSON, NDJSON lub zwykły tekst
+  const data = tryParseJsonLoose(text);
+  if(!r.ok){
+    const detail = data?.detail || data?.error || data?.raw || r.statusText;
+    throw new Error(`${r.status} ${detail}`);
+  }
+  return data;
 }
 
-function clearChat(){ chatBox.innerHTML=''; }
+/* ---------- typewriter (live typing) ---------- */
+async function typeStream(node, fullText, cps = 80){
+  if (!streamToggle.checked){
+    node.innerHTML = renderMarkdownLite(fullText);
+    node.querySelectorAll('pre code').forEach(el=>{ try{ hljs.highlightElement(el); }catch{} });
+    return;
+  }
+  const span = document.createElement('span');
+  node.innerHTML = ''; node.appendChild(span);
+  let i=0;
+  const step = ()=>{
+    if(i>=fullText.length){
+      node.innerHTML = renderMarkdownLite(fullText);
+      node.querySelectorAll('pre code').forEach(el=>{ try{ hljs.highlightElement(el); }catch{} });
+      return;
+    }
+    const next = fullText.slice(i, i + Math.max(1, Math.min(8, fullText.length - i)));
+    span.textContent += next;
+    i += next.length;
+    chatScroll.scrollTop = chatScroll.scrollHeight;
+    setTimeout(step, 1000/Math.max(20, cps));
+  };
+  step();
+}
 
+/* ---------- stats/docs ---------- */
 async function loadStats(){
-  try{
-    const r = await fetch(getBase() + '/stats');
-    const j = await r.json();
-    statDocs.textContent = j.documents ?? '—';
-    statChunks.textContent = j.chunks ?? '—';
-  }catch(e){
-    statDocs.textContent = '—'; statChunks.textContent = '—';
-  }
+  try{ const j=await fetchJSON(getBase()+'/stats'); statDocs.textContent=j.documents ?? '—'; statChunks.textContent=j.chunks ?? '—'; }
+  catch{ statDocs.textContent='—'; statChunks.textContent='—'; }
 }
 
 async function loadDocs(){
   try{
-    const r = await fetch(getBase() + '/documents');
-    const list = await r.json();
-    docsTbody.innerHTML = '';
-    if(!Array.isArray(list) || !list.length){
-      docsTbody.innerHTML = '<tr><td colspan="4" class="muted">No data.</td></tr>';
-      return;
-    }
+    const list=await fetchJSON(getBase()+'/documents');
+    docsTbody.innerHTML='';
+    if(!Array.isArray(list) || !list.length){ docsTbody.innerHTML='<tr><td colspan="4" class="muted">No data.</td></tr>'; return; }
     for(const row of list){
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${escapeHtml(row.source||'')}</td>
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${esc(row.source||'')}</td>
         <td>${row.chunks??0}</td>
         <td><code style="font-size:12px">${row.id||''}</code></td>
-        <td>
-          <button class="danger" onclick="deleteDoc('${row.id}')">Delete</button>
-        </td>`;
+        <td><button class="danger" onclick="deleteDoc('${row.id}')">Delete</button></td>`;
       docsTbody.appendChild(tr);
     }
-  }catch(e){
-    docsTbody.innerHTML = '<tr><td colspan="4" class="muted">Error loading documents.</td></tr>';
-  }
+  }catch{ docsTbody.innerHTML='<tr><td colspan="4" class="muted">Error loading.</td></tr>'; }
 }
 
 function deleteAll(){
   if(!confirm('Delete ALL documents and chunks?')) return;
-  fetch(getBase() + '/documents', {
-    method: 'DELETE',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({delete_all: true})
-  }).then(r=>r.json()).then(j=>{
-    alert(`Deleted docs: ${j.deleted_documents||0}, chunks: ${j.deleted_chunks||0}`);
-    loadDocs(); loadStats();
-  }).catch(()=>alert('Delete failed'));
+  fetchJSON(getBase()+'/documents',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({delete_all:true})})
+   .then(j=>{ alert(`Deleted docs: ${j.deleted_documents||0}, chunks: ${j.deleted_chunks||0}`); loadDocs(); loadStats(); })
+   .catch(e=>alert(e.message||'Delete failed'));
 }
-
 function deleteDoc(id){
   if(!confirm('Delete this document?')) return;
-  fetch(getBase() + '/documents/' + id, { method:'DELETE' })
-  .then(r=>r.json()).then(_=>{
-    loadDocs(); loadStats();
-  }).catch(()=>alert('Delete failed'));
+  fetchJSON(getBase()+'/documents/'+id,{method:'DELETE'})
+   .then(()=>{ loadDocs(); loadStats(); })
+   .catch(e=>alert(e.message||'Delete failed'));
 }
 
-function upload(){
-  const f = qs('#fileInput').files[0];
+/* ---------- upload (click + drag&drop) ---------- */
+function upload(file){
+  const f = file || qs('#fileInput').files[0];
   if(!f){ alert('Choose a file first.'); return; }
-  uploadMsg.textContent = '';
-  upBar.style.width = '0%';
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', getBase() + '/ingest');
-  xhr.responseType = 'json';
-  xhr.upload.onprogress = (e)=>{
-    if(e.lengthComputable){
-      const p = Math.round((e.loaded/e.total)*100);
-      upBar.style.width = p + '%';
-    }
-  };
+  uploadMsg.textContent=''; upBar.style.width='0%';
+  const xhr=new XMLHttpRequest(); xhr.open('POST', getBase()+'/ingest'); xhr.responseType='json';
+  xhr.upload.onprogress = e=>{ if(e.lengthComputable){ upBar.style.width = Math.round(100*e.loaded/e.total)+'%'; } };
   xhr.onload = ()=>{
     if(xhr.status>=200 && xhr.status<300){
-      uploadMsg.textContent = `✅ ${f.name} • chunks: ${xhr.response?.chunks ?? '?'}`;
-      loadDocs(); loadStats();
+      uploadMsg.textContent=`✅ ${f.name} • chunks: ${xhr.response?.chunks??'?'}`; loadDocs(); loadStats();
     }else{
-      uploadMsg.textContent = `❌ ${xhr.status} ${xhr.response?.detail || xhr.statusText}`;
+      const detail = xhr.response?.detail || xhr.statusText || 'Error';
+      uploadMsg.textContent = `❌ ${xhr.status} ${detail}`;
     }
   };
-  xhr.onerror = ()=> uploadMsg.textContent = '❌ Network error';
-  const form = new FormData();
-  form.append('file', f, f.name);
-  xhr.send(form);
+  xhr.onerror = ()=> uploadMsg.textContent='❌ Network error';
+  const form=new FormData(); form.append('file', f, f.name); xhr.send(form);
 }
+;['dragenter','dragover'].forEach(ev=>dropzone.addEventListener(ev, e=>{e.preventDefault(); dropzone.style.borderColor='#22c55e';}));
+;['dragleave','drop'].forEach(ev=>dropzone.addEventListener(ev, e=>{e.preventDefault(); dropzone.style.borderColor='#374151';}));
+dropzone.addEventListener('drop', e=>{ const f=e.dataTransfer.files?.[0]; if(f) upload(f); });
+
+/* ---------- chat ---------- */
+function addUserMessage(text){ addBubble('You', renderMarkdownLite(text)); }
 
 async function sendChat(){
-  const msg = chatMsg.value.trim();
+  const msg = (chatMsg.value || '').trim();
   if(!msg) return;
-  addMsg('You', msg);
+
+  addUserMessage(msg);
   chatMsg.value='';
-  sendBtn.disabled = true; sendBtn.textContent = 'Sending…';
-  addMsg('Bot', '<span class="spinner"></span> Thinking…');
+  sendBtn.disabled=true;
+
+  const thinkingMsgNode = addThinking(); // .msg w bąbelku
+
   try{
-    const r = await fetch(getBase() + '/chat', {
+    const body = {
+      message: msg,
+      k: Number(chatK.value)||6,
+      language: chatLang.value || 'pl'
+    };
+    const mdl = (chatModel.value || '').trim(); if(mdl) body.model = mdl;
+
+    const j = await fetchJSON(getBase()+'/chat', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({message: msg, k: Number(chatK.value)||4, language: chatLang.value||'en'})
+      body: JSON.stringify(body)
     });
-    const j = await r.json();
-    chatBox.lastChild.remove(); // remove "Thinking…"
-    addMsg('Bot', j.answer || '(empty answer)');
+
+    // usuń tylko bąbelek „Thinking…”
+    if (thinkingMsgNode?.parentElement) thinkingMsgNode.parentElement.remove();
+
+    const botMsgNode = addBubble('AI', '');
+    const answer =
+      (j && typeof j==='object' && 'answer' in j) ? (j.answer || '') :
+      (j && typeof j==='object' && 'message' in j) ? (j.message || '') :
+      (j && j.raw) ? String(j.raw) : '';
+
+    await typeStream(botMsgNode, answer || '(empty answer)', 80);
   }catch(e){
-    chatBox.lastChild.remove();
-    addMsg('Bot', 'Error: ' + e);
+    if (thinkingMsgNode?.parentElement) thinkingMsgNode.parentElement.remove();
+    addBubble('AI', 'Error: ' + esc(e.message || String(e)));
+    console.error(e);
   }finally{
-    sendBtn.disabled = false; sendBtn.textContent = 'Send';
+    sendBtn.disabled=false;
   }
 }
 
-// Init
-(async function init(){
-  const saved = localStorage.getItem('apiBase');
-  if(saved) apiBaseEl.value = saved;
-  await pingApi();
-  await loadStats();
-  await loadDocs();
-})();
-</script>
+/* enter to send, shift+enter newline */
+chatMsg.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendChat(); }
+});
 
+/* ---------- init ---------- */
+(async function init(){
+  const saved = localStorage.getItem('apiBase'); if(saved) apiBaseEl.value=saved;
+  await pingApi(); await loadStats(); await loadDocs();
+})();
+function refreshAll(){ pingApi(); loadStats(); loadDocs(); }
+</script>
 </body>
 </html>
