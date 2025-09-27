@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>prodtramtsty — RAG UI (with Code Snippets)</title>
+
+<!-- Styles -->
+<style>
+  :root{
+    --bg:#0f172a; --panel:#0b1220; --card:#111827; --border:#1f2937;
+    --text:#e5e7eb; --muted:#94a3b8; --accent:#22c55e; --danger:#ef4444; --warn:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,"Noto Sans",sans-serif}
+  header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}
+  header h1{margin:0;font-size:16px}
+  .muted{color:var(--muted)}
+  input,button,textarea{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;outline:none}
+  button{cursor:pointer}.primary{background:var(--accent);border-color:var(--accent);color:#052e16}.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+  .ghost{background:transparent}
+  .container{display:grid;grid-template-columns:320px 1fr;gap:14px;padding:14px}
+  @media (max-width: 980px){.container{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .col{display:flex;flex-direction:column;gap:8px}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:var(--panel);color:var(--muted)}
+  .progress{height:8px;background:var(--panel);border:1px solid var(--border);border-radius:999px;overflow:hidden}
+  .bar{height:100%;width:0;background:var(--accent);transition:width .1s}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{text-align:left;color:#93c5fd}
+  #chat{height:360px;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px}
+  .msg{margin-bottom:10px}
+  .role{font-weight:600;margin-right:6px}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #64748b;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-3px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  pre{margin:8px 0;padding:10px;border-radius:8px;overflow:auto;background:#0a0f1a;border:1px solid #1e293b}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12.5px}
+</style>
+
+<!-- highlight.js (code highlighting) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>prodtramtsty — RAG UI</h1>
+  <span class="muted">API:</span>
+  <input id="apiBase" value="http://localhost:8000" style="min-width:260px">
+  <button class="ghost" onclick="saveApiBase()">Save</button>
+  <span id="apiStatus">⏳</span>
+  <div style="margin-left:auto"></div>
+  <button class="ghost" onclick="refreshAll()">Refresh</button>
+</header>
+
+<div class="container">
+  <section class="card">
+    <h2 style="margin:0 0 8px 0;font-size:14px;opacity:.9">Upload document</h2>
+    <div class="col">
+      <input type="file" id="fileInput" />
+      <div class="progress"><div id="upBar" class="bar"></div></div>
+      <div class="row">
+        <button class="primary" onclick="upload()">Upload</button>
+        <span id="uploadMsg" class="muted"></span>
+      </div>
+    </div>
+
+    <hr style="border-color:#1f2937;margin:14px 0">
+
+    <h2 style="margin:0 0 8px 0;font-size:14px;opacity:.9">Stats</h2>
+    <div class="row">
+      <div class="chip">docs: <span id="statDocs">—</span></div>
+      <div class="chip">chunks: <span id="statChunks">—</span></div>
+      <button class="ghost" onclick="loadStats()">↻</button>
+    </div>
+
+    <hr style="border-color:#1f2937;margin:14px 0">
+
+    <h2 style="margin:0 0 8px 0;font-size:14px;opacity:.9">Documents</h2>
+    <div class="row">
+      <button class="danger" onclick="deleteAll()">Delete ALL</button>
+      <span class="muted">Careful: removes all chunks.</span>
+    </div>
+    <div id="docsWrap" style="margin-top:10px;max-height:280px;overflow:auto">
+      <table id="docsTbl">
+        <thead><tr><th>Source</th><th>Chunks</th><th>ID</th><th>Actions</th></tr></thead>
+        <tbody id="docsTbody"><tr><td colspan="4" class="muted">No data.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 style="margin:0 0 8px 0;font-size:14px;opacity:.9">Chat</h2>
+    <div class="col">
+      <div class="row">
+        <input id="chatLang" value="pl" style="width:80px" title="Language (e.g., en, pl)" />
+        <input id="chatK" value="4" style="width:80px" title="Top-k" />
+        <button class="ghost" onclick="clearChat()">Clear</button>
+      </div>
+      <div id="chat"></div>
+      <div class="row" style="margin-top:8px">
+        <textarea id="chatMsg" rows="2" style="flex:1" placeholder="Ask about your documents…"></textarea>
+        <button class="primary" id="sendBtn" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const qs = s => document.querySelector(s);
+const apiBaseEl = qs('#apiBase');
+const apiStatus = qs('#apiStatus');
+const upBar = qs('#upBar');
+const uploadMsg = qs('#uploadMsg');
+const statDocs = qs('#statDocs');
+const statChunks = qs('#statChunks');
+const docsTbody = qs('#docsTbody');
+const chatBox = qs('#chat');
+const chatMsg = qs('#chatMsg');
+const chatK = qs('#chatK');
+const chatLang = qs('#chatLang');
+const sendBtn = qs('#sendBtn');
+
+function getBase(){ return localStorage.getItem('apiBase') || apiBaseEl.value.trim(); }
+function saveApiBase(){ localStorage.setItem('apiBase', apiBaseEl.value.trim()); pingApi(); }
+async function pingApi(){
+  apiStatus.textContent = '⏳';
+  try{
+    const r = await fetch(getBase() + '/health');
+    apiStatus.textContent = r.ok ? '🟢' : '🔴';
+  }catch{ apiStatus.textContent = '🔴'; }
+}
+function refreshAll(){ pingApi(); loadStats(); loadDocs(); }
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+}
+
+/** Convert markdown-style code fences to highlighted <pre><code> blocks. */
+function renderWithCodeFences(text){
+  const fenceRe = /```(\w+)?\n([\s\S]*?)```/g;
+  let out = '';
+  let last = 0;
+  let m;
+
+  while ((m = fenceRe.exec(text)) !== null) {
+    const before = text.slice(last, m.index);
+    if (before) out += '<p>' + escapeHtml(before).replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>') + '</p>';
+
+    const lang = (m[1] || '').toLowerCase();
+    const code = m[2];
+    const cls = lang ? ` class="language-${escapeHtml(lang)}"` : '';
+    out += `<pre><code${cls}>${escapeHtml(code)}</code></pre>`;
+    last = m.index + m[0].length;
+  }
+  const tail = text.slice(last);
+  if (tail.trim()) {
+    out += '<p>' + escapeHtml(tail).replace(/\n{2,}/g,'</p><p>').replace(/\n/g,'<br>') + '</p>';
+  }
+  return out || escapeHtml(text);
+}
+
+/** Append a chat message (role = 'You' | 'Bot'); content can include code fences. */
+function addMsg(role, rawText){
+  const div = document.createElement('div');
+  div.className = 'msg';
+  const html = renderWithCodeFences(rawText);
+  div.innerHTML = `<span class="role">${escapeHtml(role)}:</span> <span>${html}</span>`;
+  chatBox.appendChild(div);
+  // Highlight code blocks
+  div.querySelectorAll('pre code').forEach(el => { try { hljs.highlightElement(el); } catch(_){} });
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function clearChat(){ chatBox.innerHTML=''; }
+
+async function loadStats(){
+  try{
+    const r = await fetch(getBase() + '/stats');
+    const j = await r.json();
+    statDocs.textContent = j.documents ?? '—';
+    statChunks.textContent = j.chunks ?? '—';
+  }catch(e){
+    statDocs.textContent = '—'; statChunks.textContent = '—';
+  }
+}
+
+async function loadDocs(){
+  try{
+    const r = await fetch(getBase() + '/documents');
+    const list = await r.json();
+    docsTbody.innerHTML = '';
+    if(!Array.isArray(list) || !list.length){
+      docsTbody.innerHTML = '<tr><td colspan="4" class="muted">No data.</td></tr>';
+      return;
+    }
+    for(const row of list){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(row.source||'')}</td>
+        <td>${row.chunks??0}</td>
+        <td><code style="font-size:12px">${row.id||''}</code></td>
+        <td>
+          <button class="danger" onclick="deleteDoc('${row.id}')">Delete</button>
+        </td>`;
+      docsTbody.appendChild(tr);
+    }
+  }catch(e){
+    docsTbody.innerHTML = '<tr><td colspan="4" class="muted">Error loading documents.</td></tr>';
+  }
+}
+
+function deleteAll(){
+  if(!confirm('Delete ALL documents and chunks?')) return;
+  fetch(getBase() + '/documents', {
+    method: 'DELETE',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({delete_all: true})
+  }).then(r=>r.json()).then(j=>{
+    alert(`Deleted docs: ${j.deleted_documents||0}, chunks: ${j.deleted_chunks||0}`);
+    loadDocs(); loadStats();
+  }).catch(()=>alert('Delete failed'));
+}
+
+function deleteDoc(id){
+  if(!confirm('Delete this document?')) return;
+  fetch(getBase() + '/documents/' + id, { method:'DELETE' })
+  .then(r=>r.json()).then(_=>{
+    loadDocs(); loadStats();
+  }).catch(()=>alert('Delete failed'));
+}
+
+function upload(){
+  const f = qs('#fileInput').files[0];
+  if(!f){ alert('Choose a file first.'); return; }
+  uploadMsg.textContent = '';
+  upBar.style.width = '0%';
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', getBase() + '/ingest');
+  xhr.responseType = 'json';
+  xhr.upload.onprogress = (e)=>{
+    if(e.lengthComputable){
+      const p = Math.round((e.loaded/e.total)*100);
+      upBar.style.width = p + '%';
+    }
+  };
+  xhr.onload = ()=>{
+    if(xhr.status>=200 && xhr.status<300){
+      uploadMsg.textContent = `✅ ${f.name} • chunks: ${xhr.response?.chunks ?? '?'}`;
+      loadDocs(); loadStats();
+    }else{
+      uploadMsg.textContent = `❌ ${xhr.status} ${xhr.response?.detail || xhr.statusText}`;
+    }
+  };
+  xhr.onerror = ()=> uploadMsg.textContent = '❌ Network error';
+  const form = new FormData();
+  form.append('file', f, f.name);
+  xhr.send(form);
+}
+
+async function sendChat(){
+  const msg = chatMsg.value.trim();
+  if(!msg) return;
+  addMsg('You', msg);
+  chatMsg.value='';
+  sendBtn.disabled = true; sendBtn.textContent = 'Sending…';
+  addMsg('Bot', '<span class="spinner"></span> Thinking…');
+  try{
+    const r = await fetch(getBase() + '/chat', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message: msg, k: Number(chatK.value)||4, language: chatLang.value||'en'})
+    });
+    const j = await r.json();
+    chatBox.lastChild.remove(); // remove "Thinking…"
+    addMsg('Bot', j.answer || '(empty answer)');
+  }catch(e){
+    chatBox.lastChild.remove();
+    addMsg('Bot', 'Error: ' + e);
+  }finally{
+    sendBtn.disabled = false; sendBtn.textContent = 'Send';
+  }
+}
+
+// Init
+(async function init(){
+  const saved = localStorage.getItem('apiBase');
+  if(saved) apiBaseEl.value = saved;
+  await pingApi();
+  await loadStats();
+  await loadDocs();
+})();
+</script>
+
+</body>
+</html>

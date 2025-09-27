@@ -46,6 +46,7 @@ services:
       OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-256}
       LLM_TIMEOUT: ${LLM_TIMEOUT:-300}
       OLLAMA_KEEP_ALIVE: "4h"
+      RAG_CITATIONS: 0
     volumes:
       - ./:/app
       - pip-cache:/root/.cache/pip
